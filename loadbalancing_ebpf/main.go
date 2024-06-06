@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"strconv"
 	"syscall"
 
 	"github.com/cilium/ebpf"
@@ -25,10 +26,13 @@ func main() {
 		log.Println("This Program Needs An Argument!!")
 		return
 	}
-	mode := os.Args[1]
+	mode, err := strconv.Atoi(os.Args[1])
 
-	if mode != "primary" && mode != "standby" {
-		log.Println("Server Mode Must be primary or standby")
+	if err != nil {
+		log.Printf("enter a number")
+	}
+	if mode < 1 && mode > 4 {
+		log.Println("Server Mode Must between 1 to 4")
 		return
 	}
 	// Remove resource limits for kernels <5.11.
@@ -38,7 +42,7 @@ func main() {
 	// Load the compiled eBPF ELF and load it into the kernel.
 	// Map needs to be pinned, such that in case the primary target is shutdown, the standby target can still see the map
 	var objs reuseportlbObjects
-	if mode == "primary" {
+	if mode == 1 {
 		if err := loadReuseportlbObjects(&objs, &ebpf.CollectionOptions{Maps: ebpf.MapOptions{PinPath: "/sys/fs/bpf/"}}); err != nil {
 			log.Print("Loading eBPF objects:", err)
 		}
@@ -69,10 +73,14 @@ func main() {
 	// NOTE: Each process has it's own file descriptor table, so don't get confused if the FDs are the same for both processes
 	v := uint64(GetFdFromListener(ln))
 	var k uint32
-	if mode == "primary" {
-		k = uint32(0)
-	} else {
+	if mode == 1 {
 		k = uint32(1)
+	} else if mode == 2 {
+		k = uint32(2)
+	} else if mode == 3 {
+		k = uint32(3)
+	} else {
+		k = uint32(4)
 	}
 
 	log.Printf("Updating with (key = %d , value = %d)", k, v)
@@ -99,7 +107,7 @@ func handleHello(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, fmt.Sprintf("Hello from the %s target!\n", os.Args[1]))
 }
 
-func getListenConfig(prog *ebpf.Program, mode string, otherInstancesRunning bool) net.ListenConfig {
+func getListenConfig(prog *ebpf.Program, mode int, otherInstancesRunning bool) net.ListenConfig {
 	lc := net.ListenConfig{Control: func(network, address string, c syscall.RawConn) error {
 		var opErr error
 		// If Control is not nil, it is called after creating the network
@@ -110,7 +118,7 @@ func getListenConfig(prog *ebpf.Program, mode string, otherInstancesRunning bool
 			// In "function" words, for fd on the SOL_SOCKET level, set the SO_REUSEPORT option to 1 (a.k.a. true/on).
 			opErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEPORT, 1)
 			// Set eBPF program to be invoked for socket selection
-			if prog != nil && mode == "primary" && !otherInstancesRunning {
+			if prog != nil && mode == 1 && !otherInstancesRunning {
 				// SO_ATTACH_REUSEPORT_EBPF program defines how packets are assigned to the sockets in the reuseport group
 				// That is, all sockets which have SO_REUSEPORT set and are using the same local address to receive packets.
 				// In "function" words, for fd on the SOL_SOCKET lever, set the unix.SO_ATTACH_REUSEPORT_EBPF option to eBPF program file descriptor.

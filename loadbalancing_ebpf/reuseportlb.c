@@ -2,7 +2,6 @@
 
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
-
 struct {
  __uint(type, BPF_MAP_TYPE_REUSEPORT_SOCKARRAY);
  __uint(max_entries, 128);
@@ -18,7 +17,7 @@ enum sk_action hot_standby_selector(struct sk_reuseport_md *reuse) {
     enum sk_action action;
 
     
-    __u32 built_in_key = 0, fall_back_key = 1;
+    __u32 w1=1,w2=2,w3=3,w4=4;
 
     if (reuse->ip_protocol != IPPROTO_TCP) {
         return SK_DROP;
@@ -30,11 +29,17 @@ enum sk_action hot_standby_selector(struct sk_reuseport_md *reuse) {
     // It checks the selected socket is matching the incoming request in the socket buffer.
     // In general it should match both sockets if they are present (listening), but the "primary" takes precedence, just because it is the first in the if statement.
     // This is intentional, as we want to have a primary socket and a fallback socket for showcasing the hot standby.
-    if (bpf_sk_select_reuseport(reuse, &tcp_balancing_targets, &built_in_key, 0) == 0) {
-        bpf_printk("Selected primary socket\n");
+    if (bpf_sk_select_reuseport(reuse, &tcp_balancing_targets, &w1, 0) == 0) {
+        bpf_printk("Selected w1 socket\n");
         action = SK_PASS;
-    } else if (bpf_sk_select_reuseport(reuse, &tcp_balancing_targets, &fall_back_key, 0) == 0) {
-        bpf_printk("Selected fallback socket\n");
+    } else if (bpf_sk_select_reuseport(reuse, &tcp_balancing_targets, &w2, 0) == 0) {
+        bpf_printk("Selected w2 socket\n");
+        action = SK_PASS;
+    } else if (bpf_sk_select_reuseport(reuse, &tcp_balancing_targets, &w3, 0) == 0) {
+        bpf_printk("Selected w3 socket\n");
+        action = SK_PASS;
+    } else if (bpf_sk_select_reuseport(reuse, &tcp_balancing_targets, &w4, 0) == 0) {
+        bpf_printk("Selected w4 socket\n");
         action = SK_PASS;
     } else {
         action = SK_DROP;
